@@ -123,6 +123,32 @@ const (
 	TAC_PLUS_VER_ONE     packetVer = TAC_PLUS_MAJOR_VER<<4 + 1
 )
 
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) write(b []byte) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = ew.w.Write(b)
+}
+
+type errReader struct {
+	r   io.Reader
+	err error
+}
+
+func (er *errReader) read(n int) []byte {
+	if er.err != nil {
+		return nil
+	}
+	v := make([]byte, n)
+	_, er.err = io.ReadFull(er.r, v)
+	return v
+}
+
 // packet represents an entire tacacs packet.  The format is the same for
 // both client as well as server
 //
@@ -156,8 +182,8 @@ func (p *packet) serialize(w io.Writer) error {
 		return err
 	}
 
-	var buf [headerLen]byte
-	b := writeBuf(buf[:])
+	var header [headerLen]byte
+	b := writeBuf(header[:])
 	b.uint8(uint8(p.version))
 	b.uint8(p.packetType)
 	b.uint8(p.seq)
@@ -165,27 +191,21 @@ func (p *packet) serialize(w io.Writer) error {
 	b.uint32(p.sessionId)
 	b.uint32(uint32(len(p.data)))
 
-	// Write the header
-	if _, err := w.Write(buf[:]); err != nil {
-		return err
-	}
+	ew := errWriter{w: w}
+	ew.write(header[:])
+	ew.write(p.data)
 
-	// Write the body
-	if _, err := w.Write(p.data); err != nil {
-		return err
-	}
-
-	return nil
+	return ew.err
 }
 
 func (p *packet) parse(r io.Reader) error {
-	var buf [headerLen]byte
-	if _, err := io.ReadFull(r, buf[:]); err != nil {
+	var header [headerLen]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return err
 	}
 
 	// Read in the header information
-	b := readBuf(buf[:])
+	b := readBuf(header[:])
 
 	p.version = packetVer(b.uint8())
 	if p.version.majorVersion() != TAC_PLUS_MAJOR_VER {
@@ -199,13 +219,11 @@ func (p *packet) parse(r io.Reader) error {
 	p.sessionId = b.uint32()
 	dataLen := b.uint32()
 
+	er := errReader{r: r}
 	// Read the packet body
-	p.data = make([]byte, dataLen)
-	if _, err := io.ReadFull(r, p.data); err != nil {
-		return err
-	}
+	p.data = er.read(int(dataLen))
 
-	return nil
+	return er.err
 
 }
 
@@ -246,11 +264,11 @@ type authenStart struct {
 
 func (s *authenStart) parse(data []byte) error {
 	r := bytes.NewReader(data)
-	var buf [authenStartHeaderLen]byte
-	if _, err := io.ReadFull(r, buf[:]); err != nil {
+	var header [authenStartHeaderLen]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return err
 	}
-	b := readBuf(buf[:])
+	b := readBuf(header[:])
 
 	s.action = b.uint8()
 	s.privLvl = b.uint8()
@@ -265,25 +283,13 @@ func (s *authenStart) parse(data []byte) error {
 		return fmt.Errorf("Invalid AUTHEN START packet. Possibly key mismatch.")
 	}
 
-	s.user = make([]byte, userLen)
-	if _, err := io.ReadFull(r, s.user); err != nil {
-		return err
-	}
-	s.port = make([]byte, portLen)
-	if _, err := io.ReadFull(r, s.port); err != nil {
-		return err
-	}
-	s.remAddr = make([]byte, remAddrLen)
-	if _, err := io.ReadFull(r, s.remAddr); err != nil {
-		return err
-	}
-	s.data = make([]byte, dataLen)
-	if _, err := io.ReadFull(r, s.data); err != nil {
-		return err
+	er := errReader{r: r}
+	s.user = er.read(int(userLen))
+	s.port = er.read(int(portLen))
+	s.remAddr = er.read(int(remAddrLen))
+	s.data = er.read(int(dataLen))
 
-	}
-
-	return nil
+	return er.err
 }
 
 func (s *authenStart) serialize() ([]byte, error) {
@@ -301,8 +307,8 @@ func (s *authenStart) serialize() ([]byte, error) {
 	}
 
 	var w bytes.Buffer
-	var buf [authenReplyHeaderLen]byte
-	b := writeBuf(buf[:])
+	var header [authenReplyHeaderLen]byte
+	b := writeBuf(header[:])
 	b.uint8(s.action)
 	b.uint8(s.privLvl)
 	b.uint8(s.authenType)
@@ -312,24 +318,15 @@ func (s *authenStart) serialize() ([]byte, error) {
 	b.uint8(uint8(len(s.remAddr)))
 	b.uint8(uint8(len(s.data)))
 
-	// Write the header
-	if _, err := w.Write(buf[:]); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(s.user); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(s.port); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(s.remAddr); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(s.data); err != nil {
-		return nil, err
-	}
+	ew := errWriter{w: &w}
 
-	return w.Bytes(), nil
+	ew.write(header[:])
+	ew.write(s.user)
+	ew.write(s.port)
+	ew.write(s.remAddr)
+	ew.write(s.data)
+
+	return w.Bytes(), ew.err
 }
 
 //  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8
@@ -349,11 +346,11 @@ type authenReply struct {
 
 func (p *authenReply) parse(data []byte) error {
 	r := bytes.NewReader(data)
-	var buf [authenReplyHeaderLen]byte
-	if _, err := io.ReadFull(r, buf[:]); err != nil {
+	var header [authenReplyHeaderLen]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return err
 	}
-	b := readBuf(buf[:])
+	b := readBuf(header[:])
 
 	p.status = b.uint8()
 	p.flags = b.uint8()
@@ -364,16 +361,11 @@ func (p *authenReply) parse(data []byte) error {
 		return fmt.Errorf("Invalid AUTHEN REPLY packet. Possibly key mismatch.")
 	}
 
-	p.serverMsg = make([]byte, serverMsgLen)
-	if _, err := io.ReadFull(r, p.serverMsg); err != nil {
-		return err
-	}
-	p.data = make([]byte, dataLen)
-	if _, err := io.ReadFull(r, p.data); err != nil {
-		return err
-	}
+	er := errReader{r: r}
+	p.serverMsg = er.read(int(serverMsgLen))
+	p.data = er.read(int(dataLen))
 
-	return nil
+	return er.err
 }
 
 func (p *authenReply) serialize() ([]byte, error) {
@@ -387,25 +379,19 @@ func (p *authenReply) serialize() ([]byte, error) {
 	}
 
 	var w bytes.Buffer
-	var buf [authenReplyHeaderLen]byte
-	b := writeBuf(buf[:])
+	var header [authenReplyHeaderLen]byte
+	b := writeBuf(header[:])
 	b.uint8(p.status)
 	b.uint8(p.flags)
 	b.uint16(uint16(len(p.serverMsg)))
 	b.uint16(uint16(len(p.data)))
 
-	// Write the header
-	if _, err := w.Write(buf[:]); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(p.serverMsg); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(p.data); err != nil {
-		return nil, err
-	}
+	ew := errWriter{w: &w}
+	ew.write(header[:])
+	ew.write(p.serverMsg)
+	ew.write(p.data)
 
-	return w.Bytes(), nil
+	return w.Bytes(), ew.err
 }
 
 //  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8  1 2 3 4 5 6 7 8
@@ -424,11 +410,11 @@ type authenContinue struct {
 
 func (p *authenContinue) parse(data []byte) error {
 	r := bytes.NewReader(data)
-	var buf [authenContinueHeaderLen]byte
-	if _, err := io.ReadFull(r, buf[:]); err != nil {
+	var header [authenContinueHeaderLen]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return err
 	}
-	b := readBuf(buf[:])
+	b := readBuf(header[:])
 	userMsgLen := b.uint16()
 	dataLen := b.uint16()
 	p.flags = b.uint8()
@@ -437,16 +423,11 @@ func (p *authenContinue) parse(data []byte) error {
 		return fmt.Errorf("Invalid AUTHEN CONTINUE packet. Possibly key mismatch.")
 	}
 
-	p.userMsg = make([]byte, userMsgLen)
-	if _, err := io.ReadFull(r, p.userMsg); err != nil {
-		return err
-	}
-	p.data = make([]byte, dataLen)
-	if _, err := io.ReadFull(r, p.data); err != nil {
-		return err
-	}
+	er := errReader{r: r}
+	p.userMsg = er.read(int(userMsgLen))
+	p.data = er.read(int(dataLen))
 
-	return nil
+	return er.err
 }
 
 func (p *authenContinue) serialize() ([]byte, error) {
@@ -460,22 +441,16 @@ func (p *authenContinue) serialize() ([]byte, error) {
 	}
 
 	var w bytes.Buffer
-	var buf [authenContinueHeaderLen]byte
-	b := writeBuf(buf[:])
+	var header [authenContinueHeaderLen]byte
+	b := writeBuf(header[:])
 	b.uint16(uint16(len(p.userMsg)))
 	b.uint16(uint16(len(p.data)))
 	b.uint8(p.flags)
 
-	// Write the header
-	if _, err := w.Write(buf[:]); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(p.userMsg); err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(p.data); err != nil {
-		return nil, err
-	}
+	ew := errWriter{w: &w}
+	ew.write(header[:])
+	ew.write(p.userMsg)
+	ew.write(p.data)
 
-	return w.Bytes(), nil
+	return w.Bytes(), ew.err
 }
