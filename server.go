@@ -5,16 +5,11 @@ import (
 	"net"
 )
 
-type KeyLookuper interface {
-	LookupKey(Peer)
-}
-
 // session represents the state of a single tacacs session which is identified
 // by the session_id field in the tacacs common header.
 type session struct {
 	conn      net.Conn
 	seq       uint8
-	peer 	Net.IP
 	sessionId uint32
 	key       []byte
 }
@@ -26,14 +21,13 @@ func NewSession(conn net.Conn) *session {
 }
 
 func (s *session) Handle() {
-	s.peerAddr, _, _ = net.SplitHostPort(s.conn.RemoteAddr().String())
-	names, err := net.LookupAddr(s.peerAddr)
+	peer, _, _ := net.SplitHostPort(s.conn.RemoteAddr().String())
+	names, err := net.LookupAddr(peer)
 	if err != nil {
-		fmt.Println("Could not loopup name for address: %s", s.peerAddr)
+		fmt.Println("Could not loopup name for address: %s", peer)
 	}
-	s.peerNames = names
 
-	fmt.Printf("New connection from %s (%s)\n", s.peerNames[0], s.peerAddr)
+	fmt.Printf("New connection from %s (%s)\n", names[0], peer)
 
 	s.key = []byte("test")
 
@@ -41,7 +35,7 @@ func (s *session) Handle() {
 
 	switch p.packetType {
 	case TAC_PLUS_AUTHEN:
-		handleAuthen()
+		s.handleAuthen(p.data)
 	case TAC_PLUS_AUTHOR:
 	case TAC_PLUS_ACCT:
 	default:
@@ -51,14 +45,14 @@ func (s *session) Handle() {
 
 }
 
-func (s *session) handleAuthen() {
+func (s *session) handleAuthen(data []byte) {
 	start := authenStart{}
-	if err := start.parse(p.data); err != nil {
+	if err := start.parse(data); err != nil {
 		fmt.Println(err)
 	}
 
 	fmt.Printf("%#v\n", start)
-	fmt.Printf("%v\n", p)
+	fmt.Printf("%v\n", data)
 	fmt.Printf("%v\n", start)
 	fmt.Printf("%s, %s, %s\n", start.user, start.port, start.remAddr)
 
@@ -70,11 +64,12 @@ func (s *session) handleAuthen() {
 	replyData.serverMsg = []byte(twofacMsg)
 	replyData.data = []byte("")
 
+	var err error
 	respPacket.data, err = replyData.serialize()
 	if err != nil {
 		fmt.Println(err)
 	}
-	respPacket.cryptData([]byte("test"))
+	respPacket.cryptData(s.key)
 
 	fmt.Printf("%#v\n", respPacket)
 	fmt.Printf("%#v\n", replyData)
