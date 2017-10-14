@@ -9,7 +9,7 @@ import (
 type packetData struct {
 	version   packetVer
 	seq       uint8
-	sessionId uint32
+	sessionID uint32
 	key       []byte
 }
 
@@ -25,7 +25,7 @@ var hashTests = []hashTest{
 		packetData{
 			version:   TAC_PLUS_VER_DEFAULT,
 			seq:       1,
-			sessionId: 1581998937,
+			sessionID: 1581998937,
 			key:       []byte("test"),
 		},
 	},
@@ -33,7 +33,7 @@ var hashTests = []hashTest{
 		packetData{
 			version:   TAC_PLUS_VER_DEFAULT,
 			seq:       1,
-			sessionId: 1581998937,
+			sessionID: 1581998937,
 			key:       []byte("test"),
 		},
 	},
@@ -43,7 +43,7 @@ func TestHash(t *testing.T) {
 	for i, test := range hashTests {
 		lastHash := make([]byte, hex.DecodedLen(len(test.lastHash)))
 		hex.Decode(lastHash, test.lastHash)
-		calcHash := createHash(uint8(test.version), test.seq, test.sessionId, test.key, lastHash)
+		calcHash := createHash(uint8(test.version), test.seq, test.sessionID, test.key, lastHash)
 		expectedHash, _ := hex.DecodeString(test.expected)
 		if !bytes.Equal(calcHash, expectedHash) {
 			t.Errorf("%d %s: expected '%x', got '%x'", i, test.name, expectedHash, calcHash)
@@ -64,7 +64,7 @@ var cryptTests = []cryptTest{
 		packetData{
 			version:   TAC_PLUS_VER_DEFAULT,
 			seq:       1,
-			sessionId: 1581998937,
+			sessionID: 1581998937,
 			key:       []byte("test"),
 		},
 	},
@@ -73,7 +73,7 @@ var cryptTests = []cryptTest{
 func TestCrypt(t *testing.T) {
 	for _, test := range cryptTests {
 		calc := test.uncryptedData[:]
-		crypt(calc, test.key, uint8(test.version), test.seq, test.sessionId)
+		crypt(calc, test.key, uint8(test.version), test.seq, test.sessionID)
 		expected := make([]byte, hex.DecodedLen(len(test.cryptedData)))
 		hex.Decode(expected, test.cryptedData)
 		if !bytes.Equal(calc, expected) {

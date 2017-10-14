@@ -165,7 +165,7 @@ type packet struct {
 	packetType uint8
 	seq        uint8
 	flags      uint8
-	sessionId  uint32
+	sessionID  uint32
 	data       []byte
 }
 
@@ -188,7 +188,7 @@ func (p *packet) serialize(w io.Writer) error {
 	b.uint8(p.packetType)
 	b.uint8(p.seq)
 	b.uint8(p.flags)
-	b.uint32(p.sessionId)
+	b.uint32(p.sessionID)
 	b.uint32(uint32(len(p.data)))
 
 	ew := errWriter{w: w}
@@ -216,7 +216,7 @@ func (p *packet) parse(r io.Reader) error {
 	p.packetType = b.uint8()
 	p.seq = b.uint8()
 	p.flags = b.uint8()
-	p.sessionId = b.uint32()
+	p.sessionID = b.uint32()
 	dataLen := b.uint32()
 
 	er := errReader{r: r}
@@ -233,7 +233,7 @@ func (p *packet) cryptData(key []byte) {
 		return
 	}
 
-	crypt(p.data, key, uint8(p.version), p.seq, p.sessionId)
+	crypt(p.data, key, uint8(p.version), p.seq, p.sessionID)
 	return
 }
 
@@ -280,7 +280,7 @@ func (s *authenStart) parse(data []byte) error {
 	dataLen := b.uint8()
 
 	if len(data) != int(authenStartHeaderLen+userLen+portLen+remAddrLen+dataLen) {
-		return fmt.Errorf("Invalid AUTHEN START packet. Possibly key mismatch.")
+		return fmt.Errorf("Invalid AUTHEN START packet. Possibly key mismatch")
 	}
 
 	er := errReader{r: r}
@@ -358,7 +358,7 @@ func (p *authenReply) parse(data []byte) error {
 	dataLen := b.uint16()
 
 	if len(data) != int(authenReplyHeaderLen+serverMsgLen+dataLen) {
-		return fmt.Errorf("Invalid AUTHEN REPLY packet. Possibly key mismatch.")
+		return fmt.Errorf("Invalid AUTHEN REPLY packet. Possibly key mismatch")
 	}
 
 	er := errReader{r: r}
@@ -420,7 +420,7 @@ func (p *authenContinue) parse(data []byte) error {
 	p.flags = b.uint8()
 
 	if len(data) != int(authenContinueHeaderLen+userMsgLen+dataLen) {
-		return fmt.Errorf("Invalid AUTHEN CONTINUE packet. Possibly key mismatch.")
+		return fmt.Errorf("Invalid AUTHEN CONTINUE packet. Possibly key mismatch")
 	}
 
 	er := errReader{r: r}

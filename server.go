@@ -10,10 +10,11 @@ import (
 type session struct {
 	conn      net.Conn
 	seq       uint8
-	sessionId uint32
+	sessionID uint32
 	key       []byte
 }
 
+// NewSession creates a new tacacs state session
 func NewSession(conn net.Conn) *session {
 	return &session{
 		conn: conn,
@@ -24,7 +25,7 @@ func (s *session) Handle() {
 	peer, _, _ := net.SplitHostPort(s.conn.RemoteAddr().String())
 	names, err := net.LookupAddr(peer)
 	if err != nil {
-		fmt.Println("Could not loopup name for address: %s", peer)
+		fmt.Printf("Could not loopup name for address: %s\n", peer)
 	}
 
 	fmt.Printf("New connection from %s (%s)\n", names[0], peer)
@@ -87,11 +88,11 @@ func (s *session) readPacket() *packet {
 	// Go ahead and increment the sequence when we receive a packet
 	s.seq = p.seq + 1
 
-	if s.sessionId == 0 {
+	if s.sessionID == 0 {
 		// New session, set the session ID
-		s.sessionId = p.sessionId
-	} else if s.sessionId != p.sessionId {
-		fmt.Printf("Invalid session id.  Got '%x', expected '%x,", p.sessionId, s.sessionId)
+		s.sessionID = p.sessionID
+	} else if s.sessionID != p.sessionID {
+		fmt.Printf("Invalid session id.  Got '%x', expected '%x,", p.sessionID, s.sessionID)
 		return nil
 	}
 
@@ -106,7 +107,7 @@ func (s *session) genPacket(packetType uint8, ver packetVer) *packet {
 		packetType: packetType,
 		version:    ver,
 		seq:        s.seq,
-		sessionId:  s.sessionId,
+		sessionID:  s.sessionID,
 	}
 	return p
 }
